@@ -15,6 +15,11 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Show toast if document was recently uploaded
+if "upload_success" in st.session_state:
+    st.toast(f"✅ Uploaded: {st.session_state.upload_success}", icon='📄')
+    del st.session_state.upload_success
+
 # Custom CSS
 st.markdown("""
 <style>
@@ -103,13 +108,17 @@ def init_session_state():
         st.session_state.current_conversation_id = None
     if "conversations" not in st.session_state:
         st.session_state.conversations = []
+    if "show_all_conversations" not in st.session_state:
+        st.session_state.show_all_conversations = False
+    if "uploader_key" not in st.session_state:
+        st.session_state.uploader_key = 0
 
 
 # API functions for conversations
-def get_conversations():
+def get_conversations(limit: int = 50):
     """Get list of all conversations."""
     try:
-        response = requests.get(f"{API_BASE_URL}/conversations")
+        response = requests.get(f"{API_BASE_URL}/conversations?limit={limit}")
         response.raise_for_status()
         return response.json()
     except Exception as e:
@@ -260,9 +269,14 @@ def render_sidebar():
                 st.rerun()
         
         # List conversations
-        convs = get_conversations()
+        # Fetch 50 by default, or 1000 if showing all
+        limit = 1000 if st.session_state.show_all_conversations else 50
+        convs = get_conversations(limit=limit)
         if convs["total"] > 0:
-            for conv in convs["conversations"]:
+            all_convs = convs["conversations"]
+            display_convs = all_convs if st.session_state.show_all_conversations else all_convs[:3]
+            
+            for conv in display_convs:
                 is_active = st.session_state.current_conversation_id == conv["id"]
                 
                 col1, col2 = st.columns([4, 1])
@@ -287,6 +301,16 @@ def render_sidebar():
                                 st.session_state.current_conversation_id = None
                                 st.session_state.messages = []
                             st.rerun()
+            
+            # Load more button
+            if not st.session_state.show_all_conversations and convs["total"] > 3:
+                if st.button("🔽 Load More", use_container_width=True):
+                    st.session_state.show_all_conversations = True
+                    st.rerun()
+            elif st.session_state.show_all_conversations and convs["total"] > 3:
+                if st.button("🔼 Show Less", use_container_width=True):
+                    st.session_state.show_all_conversations = False
+                    st.rerun()
         else:
             st.info("No conversations yet. Start a new one!")
         
@@ -299,7 +323,8 @@ def render_sidebar():
         uploaded_file = st.file_uploader(
             "Choose a file",
             type=["pdf", "docx", "txt"],
-            help="Upload PDF, DOCX, or TXT files"
+            help="Upload PDF, DOCX, or TXT files",
+            key=f"uploader_{st.session_state.uploader_key}"
         )
         
         if uploaded_file is not None:
@@ -307,10 +332,9 @@ def render_sidebar():
                 with st.spinner("Processing document..."):
                     result = upload_document(uploaded_file)
                     if result:
-                        st.success(
-                            f"✅ Uploaded: {result['filename']}\n\n"
-                            f"Chunks created: {result['chunk_count']}"
-                        )
+                        st.session_state.upload_success = result['filename']
+                        # Increment key to clear the uploader
+                        st.session_state.uploader_key += 1
                         st.rerun()
         
         st.markdown("---")

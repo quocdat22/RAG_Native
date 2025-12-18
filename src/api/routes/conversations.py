@@ -59,6 +59,7 @@ async def list_conversations(limit: int = 50):
     try:
         storage = get_conversation_storage()
         conversations = storage.list_conversations(limit=limit)
+        total = storage.count_conversations()
         
         return ConversationListResponse(
             conversations=[
@@ -71,7 +72,7 @@ async def list_conversations(limit: int = 50):
                 )
                 for conv in conversations
             ],
-            total=len(conversations)
+            total=total
         )
     except Exception as e:
         logger.error(f"Error listing conversations: {e}")

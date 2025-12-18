@@ -210,7 +210,22 @@ class ConversationStorage:
             ]
         finally:
             conn.close()
-    
+
+    def count_conversations(self) -> int:
+        """
+        Count total number of conversations.
+        
+        Returns:
+            Total count
+        """
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM conversations")
+            return cursor.fetchone()[0]
+        finally:
+            conn.close()
+
     def update_conversation_title(self, conversation_id: str, title: str) -> bool:
         """
         Update conversation title.
