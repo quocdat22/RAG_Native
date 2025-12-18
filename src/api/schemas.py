@@ -82,6 +82,7 @@ class ChatRequest(BaseModel):
     top_k: int = Field(3, ge=1, le=20, description="Number of chunks to retrieve")
     search_type: Literal["vector", "bm25", "hybrid"] = Field("hybrid", description="Search method")
     model_mode: Literal["light", "full"] = Field("light", description="LLM model mode (light: gpt-4.1-mini, full: gpt-5-chat)")
+    conversation_id: Optional[str] = Field(None, description="Conversation ID for context continuity")
 
 
 class ChatResponse(BaseModel):
@@ -97,3 +98,39 @@ class HealthResponse(BaseModel):
     status: str = "healthy"
     timestamp: datetime = Field(default_factory=datetime.utcnow)
     collection_stats: Optional[Dict] = None
+
+
+# Conversation schemas
+class MessageSchema(BaseModel):
+    """Schema for a conversation message."""
+    id: str
+    role: Literal["user", "assistant"]
+    content: str
+    sources: Optional[List[SourceCitation]] = None
+    created_at: datetime
+
+
+class ConversationCreate(BaseModel):
+    """Request to create a new conversation."""
+    title: Optional[str] = Field(None, description="Optional title for the conversation")
+
+
+class ConversationUpdate(BaseModel):
+    """Request to update a conversation."""
+    title: str = Field(..., min_length=1, description="New title for the conversation")
+
+
+class ConversationResponse(BaseModel):
+    """Response containing a single conversation with messages."""
+    id: str
+    title: str
+    messages: List[MessageSchema] = []
+    created_at: datetime
+    updated_at: datetime
+
+
+class ConversationListResponse(BaseModel):
+    """Response containing list of conversations."""
+    conversations: List[ConversationResponse]
+    total: int
+

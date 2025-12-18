@@ -49,18 +49,35 @@ class RAGPromptTemplate:
         return "\n---\n".join(context_parts)
     
     @staticmethod
-    def create_user_prompt(query: str, context: str) -> str:
+    def create_user_prompt(query: str, context: str, conversation_history: List[Dict] = None) -> str:
         """
-        Create user prompt with query and context.
+        Create user prompt with query, context, and optional conversation history.
         
         Args:
             query: User's question
             context: Formatted context from retrieved chunks
+            conversation_history: Optional list of previous messages
             
         Returns:
             Complete user prompt
         """
-        return f"""Context from research documents:
+        history_section = ""
+        if conversation_history:
+            history_parts = []
+            for msg in conversation_history[-10:]:  # Limit to last 10 messages
+                role = "User" if msg["role"] == "user" else "Assistant"
+                # Truncate long messages
+                content = msg["content"][:300] + "..." if len(msg["content"]) > 300 else msg["content"]
+                history_parts.append(f"{role}: {content}")
+            history_section = f"""Previous conversation:
+
+{chr(10).join(history_parts)}
+
+---
+
+"""
+        
+        return f"""{history_section}Context from research documents:
 
 {context}
 
@@ -102,7 +119,8 @@ class OpenAIGenerator:
         self,
         query: str,
         retrieved_chunks: List[Dict],
-        stream: bool = False
+        stream: bool = False,
+        conversation_history: List[Dict] = None
     ) -> str:
         """
         Generate response based on query and retrieved chunks.
@@ -111,13 +129,14 @@ class OpenAIGenerator:
             query: User's question
             retrieved_chunks: Retrieved context chunks
             stream: Whether to stream the response
+            conversation_history: Optional previous conversation messages
             
         Returns:
             Generated response text
         """
         # Format context
         context = RAGPromptTemplate.format_context(retrieved_chunks)
-        user_prompt = RAGPromptTemplate.create_user_prompt(query, context)
+        user_prompt = RAGPromptTemplate.create_user_prompt(query, context, conversation_history)
         
         # Create messages
         messages = [

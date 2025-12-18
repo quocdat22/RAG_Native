@@ -1,13 +1,21 @@
 """FastAPI application entry point."""
+import sys
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime
+
+# Ensure standard streams use UTF-8 on Windows
+if sys.platform == "win32":
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding='utf-8')
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding='utf-8')
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from config.settings import settings
-from src.api.routes import chat, documents, search
+from src.api.routes import chat, conversations, documents, search
 from src.api.schemas import HealthResponse
 
 # Configure logging
@@ -15,7 +23,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[
-        logging.FileHandler(settings.log_dir / "api.log"),
+        logging.FileHandler(settings.log_dir / "api.log", encoding="utf-8"),
         logging.StreamHandler()
     ]
 )
@@ -58,6 +66,7 @@ app.add_middleware(
 app.include_router(documents.router)
 app.include_router(search.router)
 app.include_router(chat.router)
+app.include_router(conversations.router)
 
 
 @app.get("/", response_model=HealthResponse)

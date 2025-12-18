@@ -59,10 +59,10 @@ def _initialize_retrievers():
 @router.post("", response_model=ChatResponse)
 async def chat(request: ChatRequest):
     """
-    Answer a question using RAG.
+    Answer a question using RAG with optional conversation context.
     
     Args:
-        request: Chat request with question
+        request: Chat request with question and optional conversation_id
         
     Returns:
         Generated answer with source citations
@@ -74,6 +74,24 @@ async def chat(request: ChatRequest):
         model_name = "openai/gpt-4.1-mini" if request.model_mode == "light" else "openai/gpt-5-chat"
         generator = get_generator(model_name=model_name)
         
+        # Load conversation history if conversation_id provided
+        conversation_history = []
+        if request.conversation_id:
+            from src.storage.conversation_storage import get_conversation_storage
+            storage = get_conversation_storage()
+            recent_messages = storage.get_recent_messages(request.conversation_id, limit=10)
+            conversation_history = [
+                {"role": msg.role, "content": msg.content}
+                for msg in recent_messages
+            ]
+        
+        # Resolve coreferences if we have history
+        query_to_use = request.query
+        if conversation_history:
+            from src.generation.context_resolver import get_context_resolver
+            resolver = get_context_resolver()
+            query_to_use = resolver.resolve(request.query, conversation_history)
+        
         # Determine retrieval top_k
         from config.settings import settings
         retrieval_k = request.top_k
@@ -81,18 +99,18 @@ async def chat(request: ChatRequest):
             # If reranking, retrieve more initially
             retrieval_k = max(request.top_k, settings.rerank.initial_top_k)
         
-        # Retrieve relevant chunks
+        # Retrieve relevant chunks using resolved query
         if request.search_type == "vector":
-            retrieved_chunks = vector_retriever.retrieve(request.query, top_k=retrieval_k)
+            retrieved_chunks = vector_retriever.retrieve(query_to_use, top_k=retrieval_k)
         elif request.search_type == "bm25":
-            retrieved_chunks = bm25_retriever.retrieve(request.query, top_k=retrieval_k)
+            retrieved_chunks = bm25_retriever.retrieve(query_to_use, top_k=retrieval_k)
         else:  # hybrid
-            retrieved_chunks = hybrid_retriever.retrieve(request.query, top_k=retrieval_k)
+            retrieved_chunks = hybrid_retriever.retrieve(query_to_use, top_k=retrieval_k)
             
         # Apply reranking if enabled
         if reranker and settings.rerank.enabled and retrieved_chunks:
             logger.info(f"Applying reranking to {len(retrieved_chunks)} chunks")
-            retrieved_chunks = reranker.rerank(request.query, retrieved_chunks)
+            retrieved_chunks = reranker.rerank(query_to_use, retrieved_chunks)
             # Ensure we respect the requested top_k from rerank results
             retrieved_chunks = retrieved_chunks[:request.top_k]
         
@@ -102,11 +120,12 @@ async def chat(request: ChatRequest):
                 detail="No relevant documents found. Please upload documents first."
             )
         
-        # Generate answer
+        # Generate answer with conversation history
         answer = generator.generate(
-            query=request.query,
+            query=request.query,  # Use original query for display
             retrieved_chunks=retrieved_chunks,
-            stream=False
+            stream=False,
+            conversation_history=conversation_history
         )
         
         # Extract citations
@@ -120,6 +139,24 @@ async def chat(request: ChatRequest):
             )
             for citation in citations
         ]
+        
+        # Save messages to conversation if conversation_id provided
+        if request.conversation_id:
+            from src.storage.conversation_storage import get_conversation_storage
+            storage = get_conversation_storage()
+            # Save user message
+            storage.add_message(
+                conversation_id=request.conversation_id,
+                role="user",
+                content=request.query
+            )
+            # Save assistant response
+            storage.add_message(
+                conversation_id=request.conversation_id,
+                role="assistant",
+                content=answer,
+                sources=citations
+            )
         
         logger.info(f"Chat response generated for query: '{request.query[:50]}...'")
         

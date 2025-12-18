@@ -42,6 +42,19 @@ st.markdown("""
         margin: 0.5rem 0;
         font-size: 0.9rem;
     }
+    .conversation-item {
+        padding: 0.5rem;
+        border-radius: 0.3rem;
+        margin: 0.2rem 0;
+        cursor: pointer;
+    }
+    .conversation-item:hover {
+        background-color: #f0f2f6;
+    }
+    .conversation-active {
+        background-color: #e3f2fd;
+        border-left: 3px solid #1E88E5;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -49,7 +62,7 @@ st.markdown("""
 def format_latex(text: str) -> str:
     """
     Ensures LaTeX formulas are correctly formatted for Streamlit.
-    Replaces \[ ... \] with $$ ... $$ and \( ... \) with $ ... $
+    Replaces \\[ ... \\] with $$ ... $$ and \\( ... \\) with $ ... $
     """
     if not text:
         return text
@@ -86,6 +99,56 @@ def init_session_state():
         st.session_state.top_k = 5
     if "model_mode" not in st.session_state:
         st.session_state.model_mode = "light"
+    if "current_conversation_id" not in st.session_state:
+        st.session_state.current_conversation_id = None
+    if "conversations" not in st.session_state:
+        st.session_state.conversations = []
+
+
+# API functions for conversations
+def get_conversations():
+    """Get list of all conversations."""
+    try:
+        response = requests.get(f"{API_BASE_URL}/conversations")
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        st.error(f"Error fetching conversations: {e}")
+        return {"conversations": [], "total": 0}
+
+
+def create_conversation(title: str = None):
+    """Create a new conversation."""
+    try:
+        data = {"title": title} if title else {}
+        response = requests.post(f"{API_BASE_URL}/conversations", json=data)
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        st.error(f"Error creating conversation: {e}")
+        return None
+
+
+def get_conversation(conversation_id: str):
+    """Get a conversation with its messages."""
+    try:
+        response = requests.get(f"{API_BASE_URL}/conversations/{conversation_id}")
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        st.error(f"Error fetching conversation: {e}")
+        return None
+
+
+def delete_conversation(conversation_id: str):
+    """Delete a conversation."""
+    try:
+        response = requests.delete(f"{API_BASE_URL}/conversations/{conversation_id}")
+        response.raise_for_status()
+        return True
+    except Exception as e:
+        st.error(f"Error deleting conversation: {e}")
+        return False
 
 
 def upload_document(file):
@@ -140,18 +203,19 @@ def search_documents(query, top_k, search_type):
         return None
 
 
-def chat(query, top_k, search_type, model_mode):
+def chat(query, top_k, search_type, model_mode, conversation_id=None):
     """Ask a question using RAG."""
     try:
-        response = requests.post(
-            f"{API_BASE_URL}/chat",
-            json={
-                "query": query,
-                "top_k": top_k,
-                "search_type": search_type,
-                "model_mode": model_mode
-            }
-        )
+        data = {
+            "query": query,
+            "top_k": top_k,
+            "search_type": search_type,
+            "model_mode": model_mode
+        }
+        if conversation_id:
+            data["conversation_id"] = conversation_id
+            
+        response = requests.post(f"{API_BASE_URL}/chat", json=data)
         response.raise_for_status()
         return response.json()
     except Exception as e:
@@ -159,9 +223,75 @@ def chat(query, top_k, search_type, model_mode):
         return None
 
 
+def load_conversation_messages(conversation_id: str):
+    """Load messages from a conversation into session state."""
+    conv = get_conversation(conversation_id)
+    if conv and conv.get("messages"):
+        st.session_state.messages = [
+            {
+                "role": msg["role"],
+                "content": msg["content"],
+                "sources": msg.get("sources", [])
+            }
+            for msg in conv["messages"]
+        ]
+    else:
+        st.session_state.messages = []
+
+
 def render_sidebar():
-    """Render sidebar with document management."""
+    """Render sidebar with document management and conversations."""
     with st.sidebar:
+        st.markdown("## 💬 Conversations")
+        
+        # New conversation button
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            if st.button("➕ New Conversation", use_container_width=True):
+                conv = create_conversation()
+                if conv:
+                    st.session_state.current_conversation_id = conv["id"]
+                    st.session_state.messages = []
+                    st.rerun()
+        
+        # Refresh conversations
+        with col2:
+            if st.button("🔄", help="Refresh conversations"):
+                st.rerun()
+        
+        # List conversations
+        convs = get_conversations()
+        if convs["total"] > 0:
+            for conv in convs["conversations"]:
+                is_active = st.session_state.current_conversation_id == conv["id"]
+                
+                col1, col2 = st.columns([4, 1])
+                with col1:
+                    # Truncate long titles
+                    display_title = conv["title"][:30] + "..." if len(conv["title"]) > 30 else conv["title"]
+                    
+                    if st.button(
+                        f"{'📌 ' if is_active else '💭 '}{display_title}",
+                        key=f"conv_{conv['id']}",
+                        use_container_width=True,
+                        type="primary" if is_active else "secondary"
+                    ):
+                        st.session_state.current_conversation_id = conv["id"]
+                        load_conversation_messages(conv["id"])
+                        st.rerun()
+                
+                with col2:
+                    if st.button("🗑️", key=f"del_{conv['id']}", help="Delete conversation"):
+                        if delete_conversation(conv["id"]):
+                            if st.session_state.current_conversation_id == conv["id"]:
+                                st.session_state.current_conversation_id = None
+                                st.session_state.messages = []
+                            st.rerun()
+        else:
+            st.info("No conversations yet. Start a new one!")
+        
+        st.markdown("---")
+        
         st.markdown("## 📚 Document Library")
         
         # Upload section
@@ -182,8 +312,6 @@ def render_sidebar():
                             f"Chunks created: {result['chunk_count']}"
                         )
                         st.rerun()
-        
-        st.markdown("---")
         
         st.markdown("---")
         
@@ -210,6 +338,12 @@ def render_main():
     """Render main chat interface."""
     st.markdown('<p class="main-title">🔬 Research Assistant</p>', unsafe_allow_html=True)
     st.markdown('<p class="subtitle">Ask questions about your research documents</p>', unsafe_allow_html=True)
+    
+    # Show current conversation info
+    if st.session_state.current_conversation_id:
+        st.caption(f"📌 Active conversation: {st.session_state.current_conversation_id[:8]}...")
+    else:
+        st.info("💡 Start a new conversation from the sidebar to enable context memory and follow-up questions.")
     
     # Check if documents exist
     docs = get_documents()
@@ -242,7 +376,7 @@ def render_main():
     
     # Chat input
     if prompt := st.chat_input("Ask a question about your documents..."):
-        # Add user message
+        # Add user message to display
         st.session_state.messages.append({"role": "user", "content": prompt})
         
         with st.chat_message("user"):
@@ -255,7 +389,8 @@ def render_main():
                     query=prompt,
                     top_k=st.session_state.top_k,
                     search_type=st.session_state.search_type,
-                    model_mode=st.session_state.model_mode
+                    model_mode=st.session_state.model_mode,
+                    conversation_id=st.session_state.current_conversation_id
                 )
                 
                 if response:
