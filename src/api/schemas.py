@@ -34,6 +34,20 @@ class DocumentDeleteResponse(BaseModel):
     status: str = "success"
 
 
+class ChunkInfo(BaseModel):
+    """Information about a single text chunk."""
+    chunk_id: str
+    text: str
+    metadata: Dict
+
+
+class DocumentChunksResponse(BaseModel):
+    """Response containing all chunks for a document."""
+    document_id: str
+    chunks: List[ChunkInfo]
+    total: int
+
+
 class SearchRequest(BaseModel):
     """Request for document search."""
     query: str = Field(..., min_length=1, description="Search query")
@@ -65,7 +79,7 @@ class SourceCitation(BaseModel):
 class ChatRequest(BaseModel):
     """Request for chat/Q&A."""
     query: str = Field(..., min_length=1, description="User question")
-    top_k: int = Field(5, ge=1, le=20, description="Number of chunks to retrieve")
+    top_k: int = Field(3, ge=1, le=20, description="Number of chunks to retrieve")
     search_type: Literal["vector", "bm25", "hybrid"] = Field("hybrid", description="Search method")
 
 

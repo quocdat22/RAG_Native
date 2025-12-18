@@ -177,6 +177,38 @@ class ChromaVectorStore:
         
         return list(documents.values())
     
+    def get_document_chunks(self, document_id: str) -> List[Dict]:
+        """
+        Get all chunks for a specific document.
+        
+        Args:
+            document_id: Document ID to retrieve chunks for
+            
+        Returns:
+            List of chunks with text and metadata
+        """
+        results = self.collection.get(
+            where={"document_id": document_id},
+            include=["documents", "metadatas"]
+        )
+        
+        chunks = []
+        for i in range(len(results["ids"])):
+            chunks.append({
+                "chunk_id": results["ids"][i],
+                "text": results["documents"][i],
+                "metadata": results["metadatas"][i]
+            })
+            
+        # Sort chunks by their original order if available (usually in chunk_id or metadata)
+        # Assuming f"{doc_id}_{i}" or metadata has chunk_index
+        try:
+            chunks.sort(key=lambda x: x["metadata"].get("chunk_id", 0))
+        except:
+            pass
+            
+        return chunks
+    
     def get_collection_stats(self) -> Dict:
         """
         Get statistics about the collection.

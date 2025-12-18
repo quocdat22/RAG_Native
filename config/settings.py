@@ -18,7 +18,7 @@ class EmbeddingSettings(BaseSettings):
 class LLMSettings(BaseSettings):
     """LLM configuration."""
     
-    model: str = Field(default="openai/gpt-4o-mini", description="Chat model")
+    model: str = Field(default="openai/gpt-5-chat", description="Chat model")
     temperature: float = Field(default=0.1, ge=0.0, le=2.0, description="Sampling temperature")
     max_tokens: int = Field(default=2048, ge=1, le=16000, description="Max response tokens")
     
@@ -61,7 +61,7 @@ class ChunkingSettings(BaseSettings):
 class RetrievalSettings(BaseSettings):
     """Retrieval configuration."""
     
-    top_k: int = Field(default=5, ge=3, le=10, description="Number of chunks to retrieve")
+    top_k: int = Field(default=3, ge=1, le=20, description="Number of results to return after all steps")
     vector_weight: float = Field(default=0.7, ge=0.0, le=1.0, description="Weight for vector search")
     bm25_weight: float = Field(default=0.3, ge=0.0, le=1.0, description="Weight for BM25 search")
     
@@ -71,9 +71,20 @@ class RetrievalSettings(BaseSettings):
     @classmethod
     def validate_top_k(cls, v: int) -> int:
         """Validate top_k is within recommended range."""
-        if not 3 <= v <= 10:
-            raise ValueError("top_k must be between 3 and 10")
+        if not 1 <= v <= 20:
+            raise ValueError("top_k must be between 1 and 20")
         return v
+
+
+class RerankSettings(BaseSettings):
+    """Reranking configuration."""
+    
+    enabled: bool = Field(default=True, description="Whether to enable reranking")
+    model: str = Field(default="rerank-v4.0-fast", description="Cohere rerank model")
+    top_n: int = Field(default=3, ge=1, le=10, description="Number of chunks to keep after reranking")
+    initial_top_k: int = Field(default=5, ge=3, le=20, description="Number of chunks to retrieve before reranking")
+    
+    model_config = SettingsConfigDict(env_prefix="RERANK_")
 
 
 class Settings(BaseSettings):
@@ -82,6 +93,7 @@ class Settings(BaseSettings):
     # API Keys
     openai_api_key: Optional[str] = Field(default=None, description="OpenAI API key")
     github_token: Optional[str] = Field(default=None, description="GitHub token for GitHub Models API")
+    cohere_api_key: Optional[str] = Field(default=None, description="Cohere API key for reranking")
     
     # API Endpoints
     api_base_url: Optional[str] = Field(
@@ -103,6 +115,7 @@ class Settings(BaseSettings):
     llm: LLMSettings = Field(default_factory=LLMSettings)
     chunking: ChunkingSettings = Field(default_factory=ChunkingSettings)
     retrieval: RetrievalSettings = Field(default_factory=RetrievalSettings)
+    rerank: RerankSettings = Field(default_factory=RerankSettings)
     
     # Storage paths
     documents_dir: Path = Field(default=Path("./data/documents"), description="Documents storage directory")

@@ -8,6 +8,7 @@ from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from config.settings import settings
 from src.api.schemas import (
+    DocumentChunksResponse,
     DocumentDeleteResponse,
     DocumentInfo,
     DocumentListResponse,
@@ -148,4 +149,39 @@ async def delete_document(document_id: str):
         raise
     except Exception as e:
         logger.error(f"Error deleting document: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{document_id}/chunks", response_model=DocumentChunksResponse)
+async def get_document_chunks(document_id: str):
+    """
+    Get all chunks for a specific document.
+    
+    Args:
+        document_id: Document ID to retrieve chunks for
+        
+    Returns:
+        List of chunks with text and metadata
+    """
+    try:
+        vector_store = get_vector_store()
+        chunks = vector_store.get_document_chunks(document_id)
+        
+        if not chunks:
+            # Check if document exists at all (might have 0 chunks or wrong ID)
+            all_docs = vector_store.get_all_documents()
+            doc_exists = any(d["document_id"] == document_id for d in all_docs)
+            if not doc_exists:
+                raise HTTPException(status_code=404, detail="Document not found")
+        
+        return DocumentChunksResponse(
+            document_id=document_id,
+            chunks=chunks,
+            total=len(chunks)
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving document chunks: {e}")
         raise HTTPException(status_code=500, detail=str(e))

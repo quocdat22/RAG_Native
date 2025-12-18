@@ -1,6 +1,7 @@
 """Streamlit frontend for RAG Native."""
 import requests
 import streamlit as st
+import re
 from datetime import datetime
 
 # API Configuration
@@ -43,6 +44,36 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
+
+
+def format_latex(text: str) -> str:
+    """
+    Ensures LaTeX formulas are correctly formatted for Streamlit.
+    Replaces \[ ... \] with $$ ... $$ and \( ... \) with $ ... $
+    """
+    if not text:
+        return text
+    
+    # Replace \[ ... \] with $$ ... $$ for block formulas
+    text = re.sub(r'\\\[(.*?)\\\]', r'$$\1$$', text, flags=re.DOTALL)
+    
+    # Replace \( ... \) with $ ... $ for inline formulas
+    text = re.sub(r'\\\((.*?)\\\)', r'$\1$', text, flags=re.DOTALL)
+    
+    # Handle potential raw [ ... ] math blocks if they contain math symbols
+    # This specifically addresses the user's example style
+    def replace_brackets(match):
+        content = match.group(1)
+        # Use more specific math indicators to avoid false positives
+        math_indicators = ['\\', '_', '^', '=', '+', '*', '/', '{', '}', '\sum', '\int', '\frac', '\sqrt', '\alpha', '\beta', '\gamma']
+        if any(indicator in content for indicator in math_indicators):
+            return f"$$\n{content.strip()}\n$$"
+        return match.group(0)
+    
+    # Match [ ... ] that are not part of source citations [Source: ...]
+    text = re.sub(r'(?<!\[Source: )\[\s*(.*?)\s*\]', replace_brackets, text)
+    
+    return text
 
 
 def init_session_state():
@@ -151,31 +182,7 @@ def render_sidebar():
         
         st.markdown("---")
         
-        # Document list
-        st.markdown("### Documents")
-        docs = get_documents()
-        
-        if docs["total"] == 0:
-            st.info("No documents uploaded yet")
-        else:
-            st.caption(f"Total: {docs['total']} documents")
-            
-            for doc in docs["documents"]:
-                with st.container():
-                    col1, col2 = st.columns([3, 1])
-                    
-                    with col1:
-                        st.markdown(f"**{doc['filename']}**")
-                        st.caption(f"{doc['file_type'].upper()}")
-                    
-                    with col2:
-                        if st.button("🗑️", key=f"del_{doc['document_id']}", help="Delete"):
-                            result = delete_document(doc['document_id'])
-                            if result:
-                                st.success("Deleted!")
-                                st.rerun()
-                    
-                    st.markdown("---")
+        st.markdown("---")
         
         # Settings
         st.markdown("### ⚙️ Settings")
@@ -185,14 +192,6 @@ def render_sidebar():
             ["hybrid", "vector", "bm25"],
             index=["hybrid", "vector", "bm25"].index(st.session_state.search_type),
             help="Vector: semantic similarity | BM25: keyword matching | Hybrid: both combined"
-        )
-        
-        st.session_state.top_k = st.slider(
-            "Number of chunks to retrieve",
-            min_value=3,
-            max_value=10,
-            value=st.session_state.top_k,
-            help="More chunks = more context but slower"
         )
 
 
@@ -219,7 +218,7 @@ def render_main():
     # Display chat messages
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+            st.markdown(format_latex(message["content"]))
             
             # Display sources if available
             if message.get("sources"):
@@ -248,7 +247,7 @@ def render_main():
                 )
                 
                 if response:
-                    st.markdown(response["answer"])
+                    st.markdown(format_latex(response["answer"]))
                     
                     # Show sources
                     if response.get("sources"):

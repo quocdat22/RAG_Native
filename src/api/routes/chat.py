@@ -10,6 +10,7 @@ from src.generation.llm import get_generator
 from src.retrieval.bm25_retriever import BM25Retriever
 from src.retrieval.hybrid_retriever import HybridRetriever
 from src.retrieval.vector_retriever import VectorRetriever
+from src.retrieval.reranker import CohereReranker
 from src.storage.vector_store import get_vector_store
 
 logger = logging.getLogger(__name__)
@@ -44,7 +45,15 @@ def _initialize_retrievers():
         bm25_weight=settings.retrieval.bm25_weight
     )
     
-    return vector_retriever, bm25_retriever, hybrid_retriever
+    # Reranker
+    reranker = None
+    if settings.rerank.enabled:
+        reranker = CohereReranker(
+            model=settings.rerank.model,
+            top_n=settings.rerank.top_n
+        )
+    
+    return vector_retriever, bm25_retriever, hybrid_retriever, reranker
 
 
 @router.post("", response_model=ChatResponse)
@@ -60,16 +69,30 @@ async def chat(request: ChatRequest):
     """
     try:
         # Initialize components
-        vector_retriever, bm25_retriever, hybrid_retriever = _initialize_retrievers()
+        vector_retriever, bm25_retriever, hybrid_retriever, reranker = _initialize_retrievers()
         generator = get_generator()
+        
+        # Determine retrieval top_k
+        from config.settings import settings
+        retrieval_k = request.top_k
+        if reranker and settings.rerank.enabled:
+            # If reranking, retrieve more initially
+            retrieval_k = max(request.top_k, settings.rerank.initial_top_k)
         
         # Retrieve relevant chunks
         if request.search_type == "vector":
-            retrieved_chunks = vector_retriever.retrieve(request.query, top_k=request.top_k)
+            retrieved_chunks = vector_retriever.retrieve(request.query, top_k=retrieval_k)
         elif request.search_type == "bm25":
-            retrieved_chunks = bm25_retriever.retrieve(request.query, top_k=request.top_k)
+            retrieved_chunks = bm25_retriever.retrieve(request.query, top_k=retrieval_k)
         else:  # hybrid
-            retrieved_chunks = hybrid_retriever.retrieve(request.query, top_k=request.top_k)
+            retrieved_chunks = hybrid_retriever.retrieve(request.query, top_k=retrieval_k)
+            
+        # Apply reranking if enabled
+        if reranker and settings.rerank.enabled and retrieved_chunks:
+            logger.info(f"Applying reranking to {len(retrieved_chunks)} chunks")
+            retrieved_chunks = reranker.rerank(request.query, retrieved_chunks)
+            # Ensure we respect the requested top_k from rerank results
+            retrieved_chunks = retrieved_chunks[:request.top_k]
         
         if not retrieved_chunks:
             raise HTTPException(
@@ -125,16 +148,30 @@ async def chat_stream(request: ChatRequest):
     """
     try:
         # Initialize components
-        vector_retriever, bm25_retriever, hybrid_retriever = _initialize_retrievers()
+        vector_retriever, bm25_retriever, hybrid_retriever, reranker = _initialize_retrievers()
         generator = get_generator()
         
+        # Determine retrieval top_k
+        from config.settings import settings
+        retrieval_k = request.top_k
+        if reranker and settings.rerank.enabled:
+            # If reranking, retrieve more initially
+            retrieval_k = max(request.top_k, settings.rerank.initial_top_k)
+            
         # Retrieve relevant chunks
         if request.search_type == "vector":
-            retrieved_chunks = vector_retriever.retrieve(request.query, top_k=request.top_k)
+            retrieved_chunks = vector_retriever.retrieve(request.query, top_k=retrieval_k)
         elif request.search_type == "bm25":
-            retrieved_chunks = bm25_retriever.retrieve(request.query, top_k=request.top_k)
+            retrieved_chunks = bm25_retriever.retrieve(request.query, top_k=retrieval_k)
         else:  # hybrid
-            retrieved_chunks = hybrid_retriever.retrieve(request.query, top_k=request.top_k)
+            retrieved_chunks = hybrid_retriever.retrieve(request.query, top_k=retrieval_k)
+            
+        # Apply reranking if enabled
+        if reranker and settings.rerank.enabled and retrieved_chunks:
+            logger.info(f"Applying reranking (stream) to {len(retrieved_chunks)} chunks")
+            retrieved_chunks = reranker.rerank(request.query, retrieved_chunks)
+            # Ensure we respect the requested top_k from rerank results
+            retrieved_chunks = retrieved_chunks[:request.top_k]
         
         if not retrieved_chunks:
             raise HTTPException(
