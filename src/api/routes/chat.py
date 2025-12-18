@@ -135,7 +135,9 @@ async def chat(request: ChatRequest):
             SourceCitation(
                 filename=citation["filename"],
                 page=citation["page"],
-                file_type=citation["file_type"]
+                file_type=citation["file_type"],
+                confidence_score=citation["confidence_score"],
+                citation_index=citation["citation_index"]
             )
             for citation in citations
         ]
@@ -144,6 +146,16 @@ async def chat(request: ChatRequest):
         if request.conversation_id:
             from src.storage.conversation_storage import get_conversation_storage
             storage = get_conversation_storage()
+            
+            # Update title with first query if it's using the default title
+            if not conversation_history:
+                conv = storage.get_conversation(request.conversation_id)
+                if conv and (conv.title == "New Conversation" or conv.title.startswith("Conversation ") or not conv.title):
+                    new_title = request.query[:20]
+                    if len(request.query) > 20:
+                        new_title += "..."
+                    storage.update_conversation_title(request.conversation_id, new_title)
+
             # Save user message
             storage.add_message(
                 conversation_id=request.conversation_id,

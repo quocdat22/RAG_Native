@@ -246,10 +246,10 @@ def render_sidebar():
                 col1, col2 = st.columns([4, 1])
                 with col1:
                     # Truncate long titles
-                    display_title = conv["title"][:30] + "..." if len(conv["title"]) > 30 else conv["title"]
+                    display_title = conv["title"][:20] + "..." if len(conv["title"]) > 20 else conv["title"]
                     
                     if st.button(
-                        f"{'📌 ' if is_active else '💭 '}{display_title}",
+                        f"{display_title}",
                         key=f"conv_{conv['id']}",
                         use_container_width=True,
                         type="primary" if is_active else "secondary"
@@ -336,9 +336,18 @@ def render_main():
             if message.get("sources"):
                 with st.expander("📖 Sources"):
                     for source in message["sources"]:
+                        # Determine confidence color
+                        conf_score = source.get('confidence_score', 0)
+                        if conf_score >= 75:
+                            conf_color = "🟢"
+                        elif conf_score >= 50:
+                            conf_color = "🟡"
+                        else:
+                            conf_color = "🔴"
+                        
                         st.markdown(
-                            f"- **{source['filename']}**, page {source['page']} "
-                            f"({source['file_type'].upper()})"
+                            f"**[{source.get('citation_index', '?')}]** {source['filename']}, page {source['page']} "
+                            f"({source['file_type'].upper()}) {conf_color} **{conf_score:.1f}%**"
                         )
     
     # Chat input
@@ -367,9 +376,18 @@ def render_main():
                     if response.get("sources"):
                         with st.expander("📖 Sources"):
                             for source in response["sources"]:
+                                # Determine confidence color
+                                conf_score = source.get('confidence_score', 0)
+                                if conf_score >= 75:
+                                    conf_color = "🟢"
+                                elif conf_score >= 50:
+                                    conf_color = "🟡"
+                                else:
+                                    conf_color = "🔴"
+                                
                                 st.markdown(
-                                    f"- **{source['filename']}**, page {source['page']} "
-                                    f"({source['file_type'].upper()})"
+                                    f"**[{source.get('citation_index', '?')}]** {source['filename']}, page {source['page']} "
+                                    f"({source['file_type'].upper()}) {conf_color} **{conf_score:.1f}%**"
                                 )
                     
                     # Add to message history
@@ -378,6 +396,10 @@ def render_main():
                         "content": response["answer"],
                         "sources": response.get("sources", [])
                     })
+                    
+                    # Rerun to update sidebar title if it's the first message
+                    if len(st.session_state.messages) <= 2:
+                        st.rerun()
                 else:
                     st.error("Failed to generate response")
 

@@ -82,6 +82,8 @@ class SourceCitation(BaseModel):
     filename: str
     page: int | str
     file_type: str
+    confidence_score: float = Field(..., ge=0.0, le=100.0, description="Confidence score (0-100%)")
+    citation_index: int = Field(..., description="Citation number in the response")
 
 
 class ChatRequest(BaseModel):

@@ -106,7 +106,7 @@ class ConversationStorage:
         try:
             conversation_id = str(uuid.uuid4())
             now = datetime.utcnow()
-            title = title or f"Conversation {now.strftime('%Y-%m-%d %H:%M')}"
+            title = title or "New Conversation"
             
             cursor = conn.cursor()
             cursor.execute(

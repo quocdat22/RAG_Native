@@ -16,7 +16,10 @@ class RAGPromptTemplate:
  
  Guidelines:
  - Use ONLY information from the provided context
- - Always cite your sources using the format: [Source: filename, page X]
+ - ALWAYS cite sources using numbered citations [1], [2], etc. immediately after each claim or fact
+ - Each context chunk has a citation number - use that exact number when citing
+ - Place citations right after the specific claim they support, NOT at the end of sentences or paragraphs
+ - You can use the same citation number multiple times if citing the same source
  - If the context doesn't contain enough information to answer the question, say so
  - Be concise but comprehensive
  - Maintain academic tone
@@ -43,7 +46,7 @@ class RAGPromptTemplate:
             page = metadata.get("page_number", "?")
             
             context_parts.append(
-                f"[Chunk {i}] From: {filename}, Page {page}\n{text}\n"
+                f"[Citation {i}] From: {filename}, Page {page}\n{text}\n"
             )
         
         return "\n---\n".join(context_parts)
@@ -85,7 +88,7 @@ class RAGPromptTemplate:
 
 Question: {query}
 
-Please provide a comprehensive answer based on the context above, and cite your sources."""
+Please provide a comprehensive answer based on the context above. Use numbered citations [1], [2], etc. immediately after each claim."""
 
 
 class OpenAIGenerator:
@@ -192,33 +195,62 @@ class OpenAIGenerator:
     
     def extract_citations(self, response: str, retrieved_chunks: List[Dict]) -> List[Dict]:
         """
-        Extract citation information from retrieved chunks.
+        Extract citation information from retrieved chunks with confidence scores.
         
         Args:
             response: Generated response
             retrieved_chunks: Retrieved chunks that were used
             
         Returns:
-            List of citation metadata
+            List of citation metadata with confidence scores and indices
         """
-        citations = []
-        seen = set()
+        import re
         
-        for chunk in retrieved_chunks:
+        citations = []
+        
+        # Extract all citation numbers used in the response
+        citation_pattern = r'\[(\d+)\]'
+        used_citations = set(int(match) for match in re.findall(citation_pattern, response))
+        
+        # Process each chunk
+        for i, chunk in enumerate(retrieved_chunks, start=1):
+            # Only include citations that were actually used in the response
+            # If no citations found in text, include all chunks (backward compatibility)
+            if used_citations and i not in used_citations:
+                continue
+                
             metadata = chunk.get("metadata", {})
             filename = metadata.get("filename", "Unknown")
             page = metadata.get("page_number", "?")
             
-            # Create unique citation key
-            citation_key = f"{filename}_{page}"
+            # Calculate confidence score from retrieval score
+            # Retrieval scores vary by search type:
+            # - Vector: cosine similarity (0-1, higher is better)
+            # - BM25: BM25 score (unbounded, higher is better)
+            # - Hybrid: RRF score (0-1, higher is better)
+            score = chunk.get("score", 0)
             
-            if citation_key not in seen:
-                citations.append({
-                    "filename": filename,
-                    "page": page,
-                    "file_type": metadata.get("file_type", "unknown")
-                })
-                seen.add(citation_key)
+            # Normalize to 0-100% range
+            # For most cases, we'll use a sigmoid-like transformation
+            if score > 1.0:
+                # BM25 scores - normalize using max observed (~30) as reference
+                confidence = min(100.0, (score / 30.0) * 100.0)
+            else:
+                # Vector/Hybrid scores (0-1 range) - direct conversion
+                confidence = score * 100.0
+            
+            # Apply ranking-based boost: earlier chunks get slight boost
+            # Top result: +0%, 2nd: -5%, 3rd: -10%, etc (max -20%)
+            rank_penalty = min(20.0, (i - 1) * 5.0)
+            confidence = max(0.0, min(100.0, confidence - rank_penalty))
+            
+            citations.append({
+                "filename": filename,
+                "page": page,
+                "file_type": metadata.get("file_type", "unknown"),
+                "confidence_score": round(confidence, 1),
+                "citation_index": i
+            })
         
         return citations
 

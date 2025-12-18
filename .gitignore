@@ -54,3 +54,4 @@ htmlcov/
 
 # UV
 .uv/
+.anti
