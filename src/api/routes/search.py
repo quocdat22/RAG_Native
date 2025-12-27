@@ -27,7 +27,7 @@ def _initialize_retrievers():
     bm25_retriever = BM25Retriever()
     
     # Get all documents from vector store for BM25 indexing
-    all_results = vector_store.collection.get()
+    all_results = vector_store.get()
     if all_results["documents"]:
         documents = [
             {"text": text, "metadata": metadata}

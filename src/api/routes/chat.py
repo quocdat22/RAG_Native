@@ -18,6 +18,9 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
+# Cache for BM25 retriever to avoid loading all documents every request
+_bm25_cache = {"retriever": None, "last_count": 0}
+
 
 def _initialize_retrievers():
     """Initialize retrievers for chat."""
@@ -27,15 +30,27 @@ def _initialize_retrievers():
     # Vector retriever
     vector_retriever = VectorRetriever(vector_store, embedder)
     
-    # BM25 retriever
+    # BM25 retriever with caching to reduce memory usage
     bm25_retriever = BM25Retriever()
-    all_results = vector_store.collection.get()
-    if all_results["documents"]:
-        documents = [
-            {"text": text, "metadata": metadata}
-            for text, metadata in zip(all_results["documents"], all_results["metadatas"])
-        ]
-        bm25_retriever.index_documents(documents)
+    current_count = vector_store.count()
+    
+    # Only re-index if collection count changed or cache is empty
+    if _bm25_cache["retriever"] is None or _bm25_cache["last_count"] != current_count:
+        logger.info(f"Initializing BM25 index (collection count: {current_count})")
+        # Limit document fetch to reduce memory spike using settings
+        max_cache = getattr(settings, 'max_documents_cache', 5000)
+        all_results = vector_store.get(limit=min(current_count, max_cache))
+        if all_results["documents"]:
+            documents = [
+                {"text": text, "metadata": metadata}
+                for text, metadata in zip(all_results["documents"], all_results["metadatas"])
+            ]
+            bm25_retriever.index_documents(documents)
+            _bm25_cache["retriever"] = bm25_retriever
+            _bm25_cache["last_count"] = current_count
+    else:
+        logger.debug("Using cached BM25 retriever")
+        bm25_retriever = _bm25_cache["retriever"]
     
     # Hybrid retriever
     hybrid_retriever = HybridRetriever(

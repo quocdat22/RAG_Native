@@ -221,8 +221,10 @@ class OpenAIGenerator:
                 continue
                 
             metadata = chunk.get("metadata", {})
-            filename = metadata.get("filename", "Unknown")
-            page = metadata.get("page_number", "?")
+            # Handle None values from Zilliz
+            filename = metadata.get("filename") or metadata.get("file") or "Unknown"
+            page = metadata.get("page_number") or metadata.get("page") or "?"
+            file_type = metadata.get("file_type") or "unknown"
             
             # Calculate confidence score from retrieval score
             # Retrieval scores vary by search type:
@@ -248,7 +250,7 @@ class OpenAIGenerator:
             citations.append({
                 "filename": filename,
                 "page": page,
-                "file_type": metadata.get("file_type", "unknown"),
+                "file_type": file_type,
                 "confidence_score": round(confidence, 1),
                 "citation_index": i
             })

@@ -48,6 +48,37 @@ Built with FastAPI and modern Python technologies, it combines vector embeddings
 
 **AI/ML:** OpenAI (embeddings & GPT models) • Cohere Rerank • LlamaParse
 
+**Memory Optimized:** Configurable for low-memory environments (512MB+) • See [MEMORY_OPTIMIZATION.md](MEMORY_OPTIMIZATION.md)
+
+---
+
+## 🚀 Deployment
+
+### Local Development
+See installation instructions below.
+
+### Production (Render Free Tier)
+**Memory-optimized for 512MB RAM limit.**
+
+📖 **Quick Deploy:** See [RENDER_DEPLOYMENT.md](RENDER_DEPLOYMENT.md)
+
+📊 **Memory Guide:** See [MEMORY_OPTIMIZATION.md](MEMORY_OPTIMIZATION.md)
+
+**Key optimizations:**
+- ChromaDB with memory-efficient settings
+- BM25 retriever caching
+- Reduced embedding batch size (20 → 15)
+- Optional startup sync (disabled by default)
+- Zilliz Cloud support (cloud-based vectors)
+
+**Environment variables for Render:**
+```bash
+ENABLE_STARTUP_SYNC=false
+MAX_DOCUMENTS_CACHE=3000
+EMBEDDING_BATCH_SIZE=15
+USE_ZILLIZ=true  # Recommended for production
+```
+
 **Storage:** ChromaDB (vector store) • Rank-BM25 (keyword search) • Supabase (conversations)
 
 **Document Processing:** PyPDF • PyMuPDF • python-docx • tiktoken

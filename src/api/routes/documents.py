@@ -123,6 +123,27 @@ async def upload_document(file: UploadFile = File(...)):
         
         logger.info(f"Extracted metadata: {list(rich_metadata.keys())}")
         
+        # Update Supabase document record with rich metadata
+        if use_supabase and supabase_doc_id:
+            try:
+                from src.storage.supabase_client import get_supabase_storage
+                supabase_storage = get_supabase_storage()
+                
+                # Get current metadata and merge with rich_metadata
+                current_doc = supabase_storage.get_document(supabase_doc_id)
+                current_metadata = current_doc.get('metadata', {}) if current_doc else {}
+                
+                # Merge rich metadata into document metadata
+                updated_metadata = {**current_metadata, **rich_metadata}
+                
+                supabase_storage.update_document(
+                    supabase_doc_id,
+                    {"metadata": updated_metadata}
+                )
+                logger.info(f"✅ Updated document metadata in Supabase: {list(rich_metadata.keys())}")
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to update document metadata in Supabase: {e}")
+        
         # Chunk document based on content type
         if is_markdown:
             # Use markdown-aware chunking that separates text and tables
@@ -198,42 +219,38 @@ async def list_documents():
         List of documents with metadata
     """
     try:
-        # Check if using Supabase
+        # Always use Supabase + Zilliz in production
         use_supabase = settings.environment == "production" or settings.use_supabase_storage
         
         if use_supabase and settings.supabase_url and settings.supabase_key:
             # Get documents from Supabase
-            try:
-                from src.storage.supabase_client import get_supabase_storage
-                supabase_storage = get_supabase_storage()
-                
-                supabase_docs = supabase_storage.list_documents()
-                
-                # Convert Supabase format to DocumentInfo format
-                doc_infos = []
-                for doc in supabase_docs:
-                    doc_info = DocumentInfo(
-                        document_id=doc['id'],
-                        filename=doc['filename'],
-                        file_type=doc.get('file_type'),
-                        upload_timestamp=doc.get('upload_date'),
-                        authors=doc.get('metadata', {}).get('authors'),
-                        year=doc.get('metadata', {}).get('year'),
-                        keywords=doc.get('metadata', {}).get('keywords'),
-                        abstract=doc.get('metadata', {}).get('abstract'),
-                        doi=doc.get('metadata', {}).get('doi'),
-                        arxiv_id=doc.get('metadata', {}).get('arxiv_id'),
-                        venue=doc.get('metadata', {}).get('venue')
-                    )
-                    doc_infos.append(doc_info)
-                
-                logger.info(f"✅ Retrieved {len(doc_infos)} documents from Supabase")
-                return DocumentListResponse(documents=doc_infos, total=len(doc_infos))
-            except Exception as e:
-                logger.error(f"❌ Failed to get documents from Supabase: {e}")
-                # Fall back to ChromaDB
+            from src.storage.supabase_client import get_supabase_storage
+            supabase_storage = get_supabase_storage()
+            
+            supabase_docs = supabase_storage.list_documents()
+            
+            # Convert Supabase format to DocumentInfo format
+            doc_infos = []
+            for doc in supabase_docs:
+                doc_info = DocumentInfo(
+                    document_id=doc['id'],
+                    filename=doc['filename'],
+                    file_type=doc.get('file_type'),
+                    upload_timestamp=doc.get('upload_date'),
+                    authors=doc.get('metadata', {}).get('authors'),
+                    year=doc.get('metadata', {}).get('year'),
+                    keywords=doc.get('metadata', {}).get('keywords'),
+                    abstract=doc.get('metadata', {}).get('abstract'),
+                    doi=doc.get('metadata', {}).get('doi'),
+                    arxiv_id=doc.get('metadata', {}).get('arxiv_id'),
+                    venue=doc.get('metadata', {}).get('venue')
+                )
+                doc_infos.append(doc_info)
+            
+            logger.info(f"✅ Retrieved {len(doc_infos)} documents from Supabase")
+            return DocumentListResponse(documents=doc_infos, total=len(doc_infos))
         
-        # Get documents from ChromaDB (local)
+        # Get documents from Zilliz (fallback for local development)
         vector_store = get_vector_store()
         documents = vector_store.get_all_documents()
         
@@ -262,45 +279,34 @@ async def delete_document(document_id: str):
         Deletion confirmation
     """
     try:
-        # Check if using Supabase
+        # Always use Supabase + Zilliz
         use_supabase = settings.environment == "production" or settings.use_supabase_storage
         chunks_deleted = 0
         
         if use_supabase and settings.supabase_url and settings.supabase_key:
             # Delete from Supabase
-            try:
-                from src.storage.supabase_client import get_supabase_storage
-                supabase_storage = get_supabase_storage()
-                
-                # Get chunk count before delete
-                doc = supabase_storage.get_document(document_id)
-                if not doc:
-                    raise HTTPException(status_code=404, detail="Document not found")
-                
-                chunks_deleted = doc.get('chunk_count', 0)
-                
-                # Delete from Supabase (includes storage file and chunks)
-                supabase_storage.delete_document(document_id)
-                logger.info(f"✅ Deleted document {document_id} from Supabase")
-                
-                return DocumentDeleteResponse(
-                    document_id=document_id,
-                    chunks_deleted=chunks_deleted
-                )
-            except HTTPException:
-                raise
-            except Exception as e:
-                logger.error(f"❌ Failed to delete from Supabase: {e}")
-                # Fall back to ChromaDB
-        
-        # Delete from ChromaDB (local)
-        vector_store = get_vector_store()
-        chunks_deleted = vector_store.delete_document(document_id)
-        
-        if chunks_deleted == 0:
-            raise HTTPException(status_code=404, detail="Document not found")
-        
-        logger.info(f"Deleted document {document_id}: {chunks_deleted} chunks")
+            from src.storage.supabase_client import get_supabase_storage
+            supabase_storage = get_supabase_storage()
+            
+            # Get chunk count before delete
+            doc = supabase_storage.get_document(document_id)
+            if not doc:
+                raise HTTPException(status_code=404, detail="Document not found")
+            
+            chunks_deleted = doc.get('chunk_count', 0)
+            
+            # Delete from Supabase (includes storage file and chunks)
+            supabase_storage.delete_document(document_id)
+            logger.info(f"✅ Deleted document {document_id} from Supabase")
+        else:
+            # Delete from Zilliz (local development)
+            vector_store = get_vector_store()
+            chunks_deleted = vector_store.delete_document(document_id)
+            
+            if chunks_deleted == 0:
+                raise HTTPException(status_code=404, detail="Document not found")
+            
+            logger.info(f"✅ Deleted document {document_id} from Zilliz: {chunks_deleted} chunks")
         
         return DocumentDeleteResponse(
             document_id=document_id,
@@ -326,42 +332,36 @@ async def get_document_chunks(document_id: str):
         List of chunks with text and metadata
     """
     try:
-        # Check if using Supabase
+        # Always use Supabase + Zilliz
         use_supabase = settings.environment == "production" or settings.use_supabase_storage
         
         if use_supabase and settings.supabase_url and settings.supabase_key:
             # Get chunks from Supabase
-            try:
-                from src.storage.supabase_client import get_supabase_storage
-                supabase_storage = get_supabase_storage()
-                
-                supabase_chunks = supabase_storage.get_document_chunks(document_id)
-                
-                if not supabase_chunks:
-                    raise HTTPException(status_code=404, detail="Document not found or has no chunks")
-                
-                # Convert to expected format
-                chunks = []
-                for chunk in supabase_chunks:
-                    chunks.append({
-                        "chunk_id": chunk['id'],
-                        "text": chunk['content'],
-                        "metadata": chunk.get('metadata', {})
-                    })
-                
-                logger.info(f"✅ Retrieved {len(chunks)} chunks from Supabase for document {document_id}")
-                return DocumentChunksResponse(
-                    document_id=document_id,
-                    chunks=chunks,
-                    total=len(chunks)
-                )
-            except HTTPException:
-                raise
-            except Exception as e:
-                logger.error(f"❌ Failed to get chunks from Supabase: {e}")
-                # Fall back to ChromaDB
+            from src.storage.supabase_client import get_supabase_storage
+            supabase_storage = get_supabase_storage()
+            
+            supabase_chunks = supabase_storage.get_document_chunks(document_id)
+            
+            if not supabase_chunks:
+                raise HTTPException(status_code=404, detail="Document not found or has no chunks")
+            
+            # Convert to expected format
+            chunks = []
+            for chunk in supabase_chunks:
+                chunks.append({
+                    "chunk_id": chunk['id'],
+                    "text": chunk['content'],
+                    "metadata": chunk.get('metadata', {})
+                })
+            
+            logger.info(f"✅ Retrieved {len(chunks)} chunks from Supabase for document {document_id}")
+            return DocumentChunksResponse(
+                document_id=document_id,
+                chunks=chunks,
+                total=len(chunks)
+            )
         
-        # Get chunks from ChromaDB (local)
+        # Get chunks from Zilliz (local development)
         vector_store = get_vector_store()
         chunks = vector_store.get_document_chunks(document_id)
         
@@ -397,40 +397,34 @@ async def get_document_metadata(document_id: str):
         Document metadata
     """
     try:
-        # Check if using Supabase
+        # Always use Supabase + Zilliz
         use_supabase = settings.environment == "production" or settings.use_supabase_storage
         
         if use_supabase and settings.supabase_url and settings.supabase_key:
             # Get from Supabase
-            try:
-                from src.storage.supabase_client import get_supabase_storage
-                supabase_storage = get_supabase_storage()
-                
-                doc = supabase_storage.get_document(document_id)
-                if not doc:
-                    raise HTTPException(status_code=404, detail="Document not found")
-                
-                # Convert Supabase format to DocumentInfo
-                return DocumentInfo(
-                    document_id=doc['id'],
-                    filename=doc['filename'],
-                    file_type=doc.get('file_type'),
-                    upload_timestamp=doc.get('upload_date'),
-                    authors=doc.get('metadata', {}).get('authors'),
-                    year=doc.get('metadata', {}).get('year'),
-                    keywords=doc.get('metadata', {}).get('keywords'),
-                    abstract=doc.get('metadata', {}).get('abstract'),
-                    doi=doc.get('metadata', {}).get('doi'),
-                    arxiv_id=doc.get('metadata', {}).get('arxiv_id'),
-                    venue=doc.get('metadata', {}).get('venue')
-                )
-            except HTTPException:
-                raise
-            except Exception as e:
-                logger.error(f"❌ Failed to get metadata from Supabase: {e}")
-                # Fall back to ChromaDB
+            from src.storage.supabase_client import get_supabase_storage
+            supabase_storage = get_supabase_storage()
+            
+            doc = supabase_storage.get_document(document_id)
+            if not doc:
+                raise HTTPException(status_code=404, detail="Document not found")
+            
+            # Convert Supabase format to DocumentInfo
+            return DocumentInfo(
+                document_id=doc['id'],
+                filename=doc['filename'],
+                file_type=doc.get('file_type'),
+                upload_timestamp=doc.get('upload_date'),
+                authors=doc.get('metadata', {}).get('authors'),
+                year=doc.get('metadata', {}).get('year'),
+                keywords=doc.get('metadata', {}).get('keywords'),
+                abstract=doc.get('metadata', {}).get('abstract'),
+                doi=doc.get('metadata', {}).get('doi'),
+                arxiv_id=doc.get('metadata', {}).get('arxiv_id'),
+                venue=doc.get('metadata', {}).get('venue')
+            )
         
-        # Get from ChromaDB (local)
+        # Get from Zilliz (local development)
         vector_store = get_vector_store()
         metadata = vector_store.get_document_metadata(document_id)
         

@@ -120,11 +120,11 @@ class Settings(BaseSettings):
     supabase_key: Optional[str] = Field(default=None, description="Supabase API key (anon/public)")
     use_supabase_storage: bool = Field(default=False, description="Use Supabase Storage instead of local storage")
     
-    # Zilliz Cloud Configuration
+    # Zilliz Cloud Configuration (Primary Vector Database)
     zilliz_uri: Optional[str] = Field(default=None, description="Zilliz Cloud URI endpoint")
     zilliz_token: Optional[str] = Field(default=None, description="Zilliz Cloud API token")
     zilliz_collection_name: str = Field(default="documents", description="Zilliz collection name")
-    use_zilliz: bool = Field(default=False, description="Use Zilliz Cloud instead of ChromaDB")
+    use_zilliz: bool = Field(default=True, description="Use Zilliz Cloud for vector storage (recommended for production)")
     
     # API Endpoints
     api_base_url: Optional[str] = Field(
@@ -150,9 +150,27 @@ class Settings(BaseSettings):
     llamaparse: LlamaParseSettings = Field(default_factory=LlamaParseSettings)
     
     # Storage paths
-    documents_dir: Path = Field(default=Path("./data/documents"), description="Documents storage directory")
-    chroma_dir: Path = Field(default=Path("./data/chroma_db"), description="ChromaDB storage directory")
+    documents_dir: Path = Field(default=Path("./data/documents"), description="Documents storage directory (deprecated - use Supabase Storage)")
     log_dir: Path = Field(default=Path("./logs"), description="Logs directory")
+    conversation_db_path: Path = Field(default=Path("./data/conversations.db"), description="Conversation database path")
+    
+    # Memory optimization settings for low-memory environments (e.g., Render free tier)
+    enable_startup_sync: bool = Field(
+        default=False, 
+        description="Enable Zilliz sync from Supabase at startup (disable to save memory)"
+    )
+    max_documents_cache: int = Field(
+        default=5000, 
+        ge=100, 
+        le=10000, 
+        description="Max documents to cache for BM25 indexing"
+    )
+    embedding_batch_size: int = Field(
+        default=20, 
+        ge=5, 
+        le=100, 
+        description="Batch size for embedding operations (lower = less memory)"
+    )
     
     # API settings
     api_host: str = Field(default="0.0.0.0", description="API host")
@@ -177,8 +195,8 @@ class Settings(BaseSettings):
     def model_post_init(self, __context) -> None:
         """Create necessary directories after model initialization."""
         self.documents_dir.mkdir(parents=True, exist_ok=True)
-        self.chroma_dir.mkdir(parents=True, exist_ok=True)
         self.log_dir.mkdir(parents=True, exist_ok=True)
+        self.conversation_db_path.parent.mkdir(parents=True, exist_ok=True)
 
 
 # Global settings instance

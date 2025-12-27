@@ -1,9 +1,8 @@
-"""Vector similarity retriever using ChromaDB."""
+"""Vector similarity retriever using Zilliz Cloud (Milvus)."""
 import logging
 from typing import Dict, List
 
 from src.embedding.embedder import OpenAIEmbedder
-from src.storage.vector_store import ChromaVectorStore
 
 logger = logging.getLogger(__name__)
 
@@ -13,20 +12,20 @@ class VectorRetriever:
     
     def __init__(
         self,
-        vector_store: ChromaVectorStore,
+        vector_store,
         embedder: OpenAIEmbedder
     ):
         """
         Initialize vector retriever.
         
         Args:
-            vector_store: ChromaDB vector store
+            vector_store: Vector store instance (ZillizVectorStore)
             embedder: OpenAI embedder for query encoding
         """
         self.vector_store = vector_store
         self.embedder = embedder
         
-        logger.info("Initialized VectorRetriever")
+        logger.info("Initialized VectorRetriever with Zilliz Cloud")
     
     def retrieve(self, query: str, top_k: int = 5) -> List[Dict]:
         """

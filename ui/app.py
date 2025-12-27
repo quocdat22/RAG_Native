@@ -5,7 +5,15 @@ import streamlit as st
 import re
 
 # API Configuration
-BACKEND_API_URL = os.getenv("BACKEND_API_URL", "https://rag-native.onrender.com")
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
+
+# Determine backend URL based on environment
+if ENVIRONMENT == "production":
+    DEFAULT_BACKEND_URL = "https://rag-native.onrender.com"
+else:
+    DEFAULT_BACKEND_URL = "http://localhost:8000"
+
+BACKEND_API_URL = os.getenv("BACKEND_API_URL", DEFAULT_BACKEND_URL)
 
 # Page config
 st.set_page_config(

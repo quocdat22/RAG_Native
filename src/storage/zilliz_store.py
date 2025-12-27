@@ -152,7 +152,7 @@ class ZillizVectorStore:
                 # Flatten metadata fields
                 "filename": metadata.get("filename"),
                 "file_type": metadata.get("file_type"),
-                "page": metadata.get("page"),
+                "page": metadata.get("page_number"),
                 "upload_timestamp": metadata.get("upload_timestamp"),
                 "authors": str(metadata.get("authors")) if metadata.get("authors") else None,
                 "year": metadata.get("year"),
@@ -371,6 +371,73 @@ class ZillizVectorStore:
             })
         
         return chunks
+    
+    def count(self) -> int:
+        """
+        Get total count of chunks in collection.
+        
+        Returns:
+            Total number of chunks
+        """
+        stats = self.client.get_collection_stats(self.collection_name)
+        return stats.get("row_count", 0)
+    
+    def get(self, limit: Optional[int] = None, **kwargs) -> Dict:
+        """
+        Get all chunks from collection (ChromaDB-compatible API).
+        
+        Args:
+            limit: Maximum number of chunks to return
+            **kwargs: Additional query parameters (ignored for compatibility)
+            
+        Returns:
+            Dictionary with 'documents' and 'metadatas' keys
+        """
+        # Query all chunks
+        results = self.client.query(
+            collection_name=self.collection_name,
+            filter="",
+            output_fields=["id", "document_id", "text", "filename", "file_type", "page",
+                          "authors", "year", "keywords", "abstract", "doi", "arxiv_id", "venue"],
+            limit=limit or 10000
+        )
+        
+        # Format results in ChromaDB format
+        documents = []
+        metadatas = []
+        
+        for item in results:
+            documents.append(item.get("text", ""))
+            
+            metadata = {
+                "document_id": item.get("document_id"),
+                "filename": item.get("filename"),
+                "file_type": item.get("file_type"),
+                "page": item.get("page"),
+            }
+            
+            # Add optional fields if present
+            if item.get("authors"):
+                metadata["authors"] = item.get("authors")
+            if item.get("year"):
+                metadata["year"] = item.get("year")
+            if item.get("keywords"):
+                metadata["keywords"] = item.get("keywords")
+            if item.get("abstract"):
+                metadata["abstract"] = item.get("abstract")
+            if item.get("doi"):
+                metadata["doi"] = item.get("doi")
+            if item.get("arxiv_id"):
+                metadata["arxiv_id"] = item.get("arxiv_id")
+            if item.get("venue"):
+                metadata["venue"] = item.get("venue")
+            
+            metadatas.append(metadata)
+        
+        return {
+            "documents": documents,
+            "metadatas": metadatas
+        }
     
     def get_collection_stats(self) -> Dict:
         """

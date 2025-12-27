@@ -384,6 +384,6 @@ def get_conversation_storage() -> ConversationStorage:
     global _conversation_storage
     if _conversation_storage is None:
         from config.settings import settings
-        db_path = settings.chroma_dir.parent / "conversations.db"
+        db_path = settings.conversation_db_path
         _conversation_storage = ConversationStorage(db_path)
     return _conversation_storage

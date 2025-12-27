@@ -79,9 +79,9 @@ class SearchResponse(BaseModel):
 
 class SourceCitation(BaseModel):
     """Source citation information."""
-    filename: str
-    page: int | str
-    file_type: str
+    filename: Optional[str] = "Unknown"
+    page: int | str | None = None
+    file_type: Optional[str] = "unknown"
     confidence_score: float = Field(..., ge=0.0, le=100.0, description="Confidence score (0-100%)")
     citation_index: int = Field(..., description="Citation number in the response")
 
@@ -108,6 +108,7 @@ class HealthResponse(BaseModel):
     status: str = "healthy"
     timestamp: datetime = Field(default_factory=datetime.utcnow)
     collection_stats: Optional[Dict] = None
+    memory_stats: Optional[Dict] = None
 
 
 # Conversation schemas

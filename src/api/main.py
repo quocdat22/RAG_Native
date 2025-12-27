@@ -41,18 +41,16 @@ async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown events."""
     # Startup
     logger.info("Starting RAG Native API...")
-    logger.info(f"ChromaDB directory: {settings.chroma_dir}")
     logger.info(f"Documents directory: {settings.documents_dir}")
+    logger.info(f"Using Zilliz Cloud for vector storage: {settings.zilliz_collection_name}")
+    logger.info(f"Using Supabase Storage for file storage: {bool(settings.supabase_url)}")
     
-    # Determine which vector store to use
-    use_zilliz = (
-        settings.use_zilliz or 
-        (settings.environment == "production" and settings.zilliz_uri and settings.zilliz_token)
-    )
-    
-    # Sync vector store from Supabase in production
+    # Sync Zilliz from Supabase in production
     if settings.environment == "production" and settings.supabase_url and settings.supabase_key:
-        if use_zilliz:
+        # Only sync if explicitly enabled to save memory on limited environments
+        sync_enabled = getattr(settings, 'enable_startup_sync', False)
+        
+        if sync_enabled:
             logger.info("🔄 Production environment detected - syncing Zilliz Cloud from Supabase...")
             try:
                 from src.storage.zilliz_sync import sync_zilliz_from_supabase
@@ -65,17 +63,7 @@ async def lifespan(app: FastAPI):
                 logger.error(f"❌ Zilliz sync failed: {e}")
                 logger.warning("Continuing startup despite sync failure...")
         else:
-            logger.info("🔄 Production environment detected - syncing ChromaDB from Supabase...")
-            try:
-                from src.storage.chromadb_sync import sync_chromadb_from_supabase
-                result = await sync_chromadb_from_supabase()
-                logger.info(
-                    f"✅ ChromaDB sync complete: {result['synced']} synced, "
-                    f"{result['skipped']} skipped, {result['failed']} failed"
-                )
-            except Exception as e:
-                logger.error(f"❌ ChromaDB sync failed: {e}")
-                logger.warning("Continuing startup despite sync failure...")
+            logger.info("⚠️ Startup sync disabled to conserve memory (set ENABLE_STARTUP_SYNC=true to enable)")
     
     yield
     
@@ -112,13 +100,17 @@ async def root():
     """Health check endpoint."""
     try:
         from src.storage.vector_store import get_vector_store
+        from src.utils.memory_monitor import get_memory_usage
+        
         vector_store = get_vector_store()
         stats = vector_store.get_collection_stats()
+        memory_stats = get_memory_usage()
         
         return HealthResponse(
             status="healthy",
             timestamp=datetime.utcnow(),
-            collection_stats=stats
+            collection_stats=stats,
+            memory_stats=memory_stats
         )
     except Exception as e:
         logger.error(f"Health check failed: {e}")
