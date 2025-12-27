@@ -44,6 +44,39 @@ async def lifespan(app: FastAPI):
     logger.info(f"ChromaDB directory: {settings.chroma_dir}")
     logger.info(f"Documents directory: {settings.documents_dir}")
     
+    # Determine which vector store to use
+    use_zilliz = (
+        settings.use_zilliz or 
+        (settings.environment == "production" and settings.zilliz_uri and settings.zilliz_token)
+    )
+    
+    # Sync vector store from Supabase in production
+    if settings.environment == "production" and settings.supabase_url and settings.supabase_key:
+        if use_zilliz:
+            logger.info("🔄 Production environment detected - syncing Zilliz Cloud from Supabase...")
+            try:
+                from src.storage.zilliz_sync import sync_zilliz_from_supabase
+                result = await sync_zilliz_from_supabase()
+                logger.info(
+                    f"✅ Zilliz sync complete: {result['synced']} synced, "
+                    f"{result['skipped']} skipped, {result['failed']} failed"
+                )
+            except Exception as e:
+                logger.error(f"❌ Zilliz sync failed: {e}")
+                logger.warning("Continuing startup despite sync failure...")
+        else:
+            logger.info("🔄 Production environment detected - syncing ChromaDB from Supabase...")
+            try:
+                from src.storage.chromadb_sync import sync_chromadb_from_supabase
+                result = await sync_chromadb_from_supabase()
+                logger.info(
+                    f"✅ ChromaDB sync complete: {result['synced']} synced, "
+                    f"{result['skipped']} skipped, {result['failed']} failed"
+                )
+            except Exception as e:
+                logger.error(f"❌ ChromaDB sync failed: {e}")
+                logger.warning("Continuing startup despite sync failure...")
+    
     yield
     
     # Shutdown

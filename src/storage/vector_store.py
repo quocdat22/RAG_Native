@@ -188,6 +188,21 @@ class ChromaVectorStore:
         
         return list(documents.values())
     
+    def count_document_chunks(self, document_id: str) -> int:
+        """
+        Count chunks for a specific document.
+        
+        Args:
+            document_id: Document ID to count chunks for
+            
+        Returns:
+            Number of chunks for this document
+        """
+        results = self.collection.get(
+            where={"document_id": document_id}
+        )
+        return len(results.get("ids", []))
+    
     def get_document_chunks(self, document_id: str) -> List[Dict]:
         """
         Get all chunks for a specific document.
@@ -390,11 +405,36 @@ class ChromaVectorStore:
         return filtered_docs
 
 
-def get_vector_store() -> ChromaVectorStore:
-    """Get configured vector store instance."""
+def get_vector_store():
+    """
+    Get configured vector store instance.
+    
+    Returns Zilliz Cloud store if USE_ZILLIZ=true or environment=production with Zilliz configured,
+    otherwise returns ChromaDB store for local development.
+    
+    Returns:
+        ZillizVectorStore or ChromaVectorStore instance
+    """
     from config.settings import settings
     
-    return ChromaVectorStore(
-        persist_directory=settings.chroma_dir,
-        collection_name="documents"
+    # Use Zilliz in production or when explicitly enabled
+    use_zilliz = (
+        settings.use_zilliz or 
+        (settings.environment == "production" and settings.zilliz_uri and settings.zilliz_token)
     )
+    
+    if use_zilliz:
+        from src.storage.zilliz_store import get_zilliz_store
+        
+        return get_zilliz_store(
+            uri=settings.zilliz_uri,
+            token=settings.zilliz_token,
+            collection_name=settings.zilliz_collection_name,
+            dimension=settings.embedding.dimension
+        )
+    else:
+        # Use ChromaDB for local development
+        return ChromaVectorStore(
+            persist_directory=settings.chroma_dir,
+            collection_name="documents"
+        )

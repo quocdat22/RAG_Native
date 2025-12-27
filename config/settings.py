@@ -120,6 +120,12 @@ class Settings(BaseSettings):
     supabase_key: Optional[str] = Field(default=None, description="Supabase API key (anon/public)")
     use_supabase_storage: bool = Field(default=False, description="Use Supabase Storage instead of local storage")
     
+    # Zilliz Cloud Configuration
+    zilliz_uri: Optional[str] = Field(default=None, description="Zilliz Cloud URI endpoint")
+    zilliz_token: Optional[str] = Field(default=None, description="Zilliz Cloud API token")
+    zilliz_collection_name: str = Field(default="documents", description="Zilliz collection name")
+    use_zilliz: bool = Field(default=False, description="Use Zilliz Cloud instead of ChromaDB")
+    
     # API Endpoints
     api_base_url: Optional[str] = Field(
         default="https://models.github.ai/inference", 

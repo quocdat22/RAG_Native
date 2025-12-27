@@ -17,7 +17,7 @@ from src.api.schemas import (
     DocumentUploadResponse,
 )
 from src.embedding.embedder import get_embedder
-from src.ingestion.chunking import smart_chunk_documents, smart_chunk_markdown
+from src.ingestion.chunking import smart_chunk_documents, smart_chunk_markdown, Chunk
 from src.ingestion.loaders import DocumentLoader
 from src.storage.vector_store import get_vector_store
 
@@ -569,3 +569,57 @@ async def search_documents(request: DocumentSearchRequest):
         logger.error(f"Error searching documents: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@router.post("/sync")
+async def sync_chromadb():
+    """
+    Sync vector store with Supabase documents.
+    
+    This endpoint rebuilds the vector store (Zilliz Cloud or ChromaDB) from documents stored in Supabase.
+    Useful after Render restarts or when the vector store gets out of sync.
+    
+    Returns:
+        Sync statistics
+    """
+    try:
+        # Check if Supabase is configured
+        if not settings.supabase_url or not settings.supabase_key:
+            raise HTTPException(
+                status_code=400,
+                detail="Supabase is not configured"
+            )
+        
+        # Determine which vector store to use
+        use_zilliz = (
+            settings.use_zilliz or 
+            (settings.environment == "production" and settings.zilliz_uri and settings.zilliz_token)
+        )
+        
+        if use_zilliz:
+            logger.info("🔄 Manual Zilliz Cloud sync triggered")
+            from src.storage.zilliz_sync import sync_zilliz_from_supabase
+            result = await sync_zilliz_from_supabase()
+            store_name = "Zilliz Cloud"
+        else:
+            logger.info("🔄 Manual ChromaDB sync triggered")
+            from src.storage.chromadb_sync import sync_chromadb_from_supabase
+            result = await sync_chromadb_from_supabase()
+            store_name = "ChromaDB"
+        
+        logger.info(
+            f"✅ {store_name} sync complete: {result['synced']} synced, "
+            f"{result['skipped']} skipped, {result['failed']} failed"
+        )
+        
+        return {
+            "status": "success",
+            "message": f"{store_name} sync completed",
+            "vector_store": store_name,
+            **result
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Sync failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
